@@ -31,6 +31,32 @@ O `DEPLOY.md` conduz o trabalho do agente. Os workflows em
 `.github/workflows/` executam o CI/CD a cada evento configurado, sem depender
 de uma nova conversa com a IA para publicar cada alteração.
 
+## Pré-requisitos da pessoa
+
+Confira estes itens na fase 1, antes de qualquer outra coisa. Se algum faltar,
+informe qual e como resolver, sem contornar o requisito.
+
+- Uma cópia própria deste repositório no GitHub (fork ou repositório novo),
+  com Actions habilitado e permissão de administrador para criar environments
+  e variáveis. A trust OIDC e as variáveis são por repositório.
+- Uma conta AWS com faturamento ativo e uma credencial local IAM ou SSO com
+  permissão para VPC/EC2, RDS, ECS, ECR, IAM (roles, provedor OIDC e
+  `iam:PassRole`), S3, SSM, CloudWatch Logs e STS. Não use o usuário root; se
+  for a única credencial disponível, alerte a pessoa e peça confirmação.
+- Ferramentas locais: `git`, AWS CLI v2, GitHub CLI (`gh`) autenticado, Docker
+  em execução, Node.js 22, `jq`, `curl`, `openssl` e `shellcheck`. No Windows,
+  use WSL2.
+
+Verificações rápidas, sem imprimir segredos:
+
+```bash
+aws sts get-caller-identity
+aws s3control get-public-access-block --account-id <conta>   # não pode bloquear policy pública
+gh auth status
+docker info --format '{{.ServerVersion}}'
+node -v
+```
+
 ## 1. Restrições iniciais
 
 As definições abaixo são propostas para o laboratório. Confirme os valores com
@@ -79,7 +105,6 @@ Converse sobre as lacunas que mudam o deploy:
 - A sessão aceita uma breve interrupção durante a atualização da aplicação?
 - O acesso será público ou restrito? Como a aplicação autentica seus usuários?
 - Quanto tempo a pessoa precisa para testar e quem confirma o encerramento?
-- Existe domínio e certificado disponíveis para a API, se a solução precisar?
 
 Faça perguntas em pequenos grupos e explique como as respostas afetam o deploy.
 Não pergunte novamente o que a pessoa já definiu nem o que o código esclarece.
@@ -181,7 +206,8 @@ Configure a validação em pull requests destinados à `main` e em pushes na
 5. Testes de integração com PostgreSQL descartável no CI, incluindo migrations
    e persistência, sem usar o banco do ambiente AWS como banco de testes do CI.
 6. Validação dos scripts shell e das políticas IAM que eles geram, incluindo
-   regras relevantes de configuração e acesso. Use `bash -n` e um linter de shell apropriado.
+   regras relevantes de configuração e acesso. Use `bash -n` e um linter de
+   shell apropriado.
 7. Build do frontend e da imagem Docker da API.
 
 Adapte o conjunto de testes à aplicação. Não crie testes que apenas confirmem
@@ -238,6 +264,27 @@ Apresente o diff e o plano de recursos para revisão. Registre o escopo autoriza
 para criar e atualizar este ambiente. A confirmação para destruir vem depois
 que a pessoa tiver oportunidade de usar a aplicação, conforme a seção 6.
 Execute dentro desse escopo e relate falhas com saídas reais das ferramentas.
+
+### Armadilhas conhecidas
+
+Problemas já encontrados neste laboratório, para verificar desde o início:
+
+- Repositórios com subject imutável no OIDC do GitHub usam o claim
+  `repo:owner@<id>/repo@<id>:...`. Leia o formato real em
+  `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` antes de
+  escrever a trust policy. Uma trust nova ou alterada leva alguns segundos
+  para propagar no IAM.
+- O provedor OIDC `token.actions.githubusercontent.com` pode já existir na
+  conta. Reutilize-o e não o remova na destruição.
+- A imagem roda como usuário não-root: arquivos baixados no build, como o CA
+  do RDS, precisam ser legíveis por esse usuário. Teste a imagem com
+  `DB_SSL=true` no CI.
+- O waiter `ecs wait services-stable` pode retornar antes do fim do rollout.
+  Aguarde `rolloutState` `COMPLETED` ou `FAILED` e confira se a revisão
+  primária é a nova, e não um rollback do circuit breaker.
+- Scripts de rede são idempotentes só se consultarem por nome/tag antes de
+  criar. Várias pessoas na mesma conta precisam de identificadores únicos e
+  podem esbarrar no limite padrão de 5 VPCs por região.
 
 ### Scripts shell obrigatórios
 
@@ -335,13 +382,16 @@ Para os dados descartáveis deste exercício, proponha explicitamente a polític
 de exclusão do RDS e de seus backups, como `--skip-final-snapshot`,
 `--delete-automated-backups` e retenção de backup zero. Sem uma stack de IaC,
 nada é removido em cascata: o `destroy.sh` precisa apagar cada recurso na ordem
-de dependência e conferir snapshots ou recursos retidos. Nunca aplique uma política destrutiva aos dados
-de outro ambiente. Veja as [opções de exclusão do RDS][rds-delete].
+de dependência e conferir snapshots ou recursos retidos. Nunca aplique uma
+política destrutiva aos dados de outro ambiente. Veja as
+[opções de exclusão do RDS][rds-delete].
 
 Depois da remoção, confira por identificador os recursos remanescentes: banco,
-snapshots, backups retidos, tasks, balanceadores, IPs, imagens, buckets, versões
-de objetos, configuração de website, segredos e logs. Preserve recursos compartilhados
-que já existiam. Informe resíduos, falhas de exclusão e custos possíveis.
+snapshots, backups retidos, tasks, interfaces de rede e IPs públicos, VPC,
+imagens, buckets e versões de objetos, segredos, logs e roles IAM. Preserve
+recursos compartilhados que já existiam, como um provedor OIDC do GitHub
+criado antes do laboratório. Informe resíduos, falhas de exclusão e custos
+possíveis.
 
 O faturamento pode aparecer depois. Diferencie a conferência imediata dos
 recursos de uma confirmação posterior das cobranças.
@@ -354,7 +404,6 @@ disponibilidade novamente na preparação de cada workshop.
 - [Preços do Fargate][fargate].
 - [Preços do RDS PostgreSQL][rds].
 - [Preços de rede e IPv4][vpc].
-- [Preços do Elastic Load Balancing][elb].
 - [Preços do ECR][ecr].
 - [Preços do S3][s3] e [S3 Static Website Hosting][s3-website].
 - [Autenticação GitHub Actions com OIDC na AWS][oidc].
@@ -365,7 +414,6 @@ disponibilidade novamente na preparação de cada workshop.
 [fargate]: https://aws.amazon.com/fargate/pricing/
 [rds]: https://aws.amazon.com/rds/postgresql/pricing/
 [vpc]: https://aws.amazon.com/vpc/pricing/
-[elb]: https://aws.amazon.com/elasticloadbalancing/pricing/
 [ecr]: https://aws.amazon.com/ecr/pricing/
 [s3]: https://aws.amazon.com/s3/pricing/
 [s3-website]: https://docs.aws.amazon.com/AmazonS3/latest/userguide/WebsiteHosting.html
