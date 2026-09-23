@@ -60,12 +60,17 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.get('/api/me', requireAuth, async (req, res) => {
-  const { rows } = await pool.query(
-    'SELECT id, name, email, created_at FROM users WHERE id = $1',
-    [req.user.sub]
-  );
-  if (!rows[0]) return res.status(404).json({ error: 'Usuário não encontrado' });
-  res.json({ user: rows[0] });
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, name, email, created_at FROM users WHERE id = $1',
+      [req.user.sub]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Usuário não encontrado' });
+    res.json({ user: rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
 });
 
 const PORT = process.env.PORT || 3000;

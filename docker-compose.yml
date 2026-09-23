@@ -7,7 +7,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-registro}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./api/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
     ports:
       - "${DB_PORT:-5433}:5432"
     healthcheck:
