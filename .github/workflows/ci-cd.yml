@@ -1,0 +1,208 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'deploy = atualiza ambiente ativo; provision = cria o ambiente (primeira vez)'
+        type: choice
+        options: [deploy, provision]
+        default: deploy
+
+permissions:
+  contents: read
+
+# Validações de PR antigos são canceladas; na main cada commit roda até o fim.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  lint:
+    name: Lint e formatação
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix api
+      - run: npx eslint .
+      - run: npx prettier --check .
+
+  test-api:
+    name: Testes da API (com PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: registro_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app -d registro_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgres://app:app@localhost:5432/registro_test
+      REQUIRE_DB: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - run: npm ci --prefix api
+      - run: npm test --prefix api
+
+  test-frontend:
+    name: Testes e build do frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run test:frontend
+      - run: scripts/build-frontend.sh dist/frontend 'http://203.0.113.10:3000' "${GITHUB_SHA::12}"
+
+  shell:
+    name: Scripts shell e políticas IAM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck --version
+      - run: bash scripts/test/run.sh
+      - name: actionlint (workflows)
+        run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.7 -no-color
+
+  image:
+    name: Build da imagem da API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build --build-arg APP_VERSION="${GITHUB_SHA::12}" -t "registro-api:${GITHUB_SHA::12}" api
+      - name: Imagem lê o CA do RDS como usuário não-root (DB_SSL=true)
+        run: |
+          docker run --rm -e DB_SSL=true -e PGHOST=localhost "registro-api:${GITHUB_SHA::12}" \
+            node -e "require('./src/db'); console.log('CA legível por', require('os').userInfo().username)"
+      - name: Container sobe e responde ao health check
+        run: |
+          docker run -d --name api -p 3000:3000 -e JWT_SECRET=ci-secret -e PGHOST=localhost "registro-api:${GITHUB_SHA::12}"
+          for _ in $(seq 20); do
+            curl -fsS localhost:3000/api/health && exit 0
+            sleep 1
+          done
+          docker logs api
+          exit 1
+      - name: Recusa iniciar em produção sem JWT_SECRET
+        run: |
+          if docker run --rm "registro-api:${GITHUB_SHA::12}" node -e "require('./src/auth')"; then
+            echo "A imagem aceitou o segredo padrão em produção" && exit 1
+          fi
+      - name: Exporta a imagem validada
+        run: docker save "registro-api:${GITHUB_SHA::12}" | gzip > image.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api-image
+          path: image.tar.gz
+          retention-days: 1
+
+  changes:
+    name: Detecta mudanças publicáveis
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.diff.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # Mudanças só em documentação (*.md, docs/) dispensam o deploy; as validações rodam sempre.
+          if [[ "$GITHUB_EVENT_NAME" != push || -z "$BEFORE" || "$BEFORE" =~ ^0+$ ]] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          files=$(git diff --name-only "$BEFORE" "$GITHUB_SHA")
+          echo "$files"
+          if grep -qvE '(\.md$|^docs/)' <<<"$files"; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "Somente documentação alterada: deploy dispensado." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  deploy:
+    name: Deploy na AWS
+    needs: [lint, test-api, test-frontend, shell, image, changes]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && needs.changes.outputs.deploy == 'true'))
+    runs-on: ubuntu-latest
+    environment:
+      name: lab
+      url: ${{ steps.deploy.outputs.site_url }}
+    permissions:
+      contents: read
+      id-token: write
+    # Um deploy por ambiente por vez; o seguinte espera (não cancela) o atual.
+    concurrency:
+      group: deploy-lab
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confere configuração do environment
+        env:
+          ROLE: ${{ vars.AWS_ROLE_ARN }}
+          REGION: ${{ vars.AWS_REGION }}
+          ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
+          LAB_ENV: ${{ vars.LAB_ENV }}
+        run: |
+          missing=""
+          for v in ROLE REGION ACCOUNT LAB_ENV; do [[ -n "${!v}" ]] || missing="$missing $v"; done
+          if [[ -n "$missing" ]]; then
+            echo "::error::Variáveis ausentes no environment 'lab':$missing. Rode scripts/bootstrap-github-oidc.sh."
+            exit 1
+          fi
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: api-image
+      - name: Carrega a imagem validada no CI
+        run: gunzip -c image.tar.gz | docker load
+      - name: Deploy
+        id: deploy
+        env:
+          LAB_ENV: ${{ vars.LAB_ENV }}
+          REGION: ${{ vars.AWS_REGION }}
+          ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
+          ACTION: ${{ inputs.action || 'deploy' }}
+        run: |
+          tag="${GITHUB_SHA::12}"
+          args=(--env "$LAB_ENV" --region "$REGION" --account "$ACCOUNT" --image-tag "$tag" --local-image "registro-api:$tag")
+          [[ "$ACTION" == provision ]] && args+=(--provision)
+          scripts/deploy.sh "${args[@]}"
