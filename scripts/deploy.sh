@@ -89,6 +89,9 @@ check_identity "$ACCOUNT"
 
 # ---- Estado do laboratório -----------------------------------------------------
 STATE=$(get_state)
+if [[ "$STATE" == destroying ]]; then
+  die "Ambiente '$ENV_NAME' em destruição (ou destruição incompleta). Termine com scripts/destroy.sh antes de publicar ou provisionar."
+fi
 if [[ "$STATE" != active && "$PROVISION" != true ]]; then
   msg="Laboratório '$ENV_NAME' não está ativo (estado: ${STATE:-inexistente}). Nada foi criado. Para provisionar, rode com --provision (no GitHub: workflow_dispatch com action=provision)."
   log "$msg"
@@ -555,6 +558,8 @@ deploy_service
 discover_api_ip
 publish_frontend
 smoke_test
+# Não reativa um ambiente que começou a ser destruído durante este deploy.
+[[ "$(get_state)" != destroying ]] || die "Destruição iniciada durante o deploy; estado não foi reativado."
 set_state active
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then

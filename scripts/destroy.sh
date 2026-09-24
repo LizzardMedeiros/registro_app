@@ -67,6 +67,23 @@ if [[ "$YES" != true && "$DRY_RUN" != true ]]; then
   [[ "$answer" == "$ENV_NAME" ]] || die "Confirmação não confere. Nada foi removido."
 fi
 
+# Um deploy em andamento no GitHub poderia recriar recursos durante a remoção.
+check_running_pipeline() {
+  if ! command -v gh >/dev/null || ! gh auth status >/dev/null 2>&1; then
+    warn "gh indisponível: confira manualmente que nenhum deploy está rodando no GitHub Actions"
+    return 0
+  fi
+  local repo running
+  repo=$(git -C "$SCRIPT_DIR/.." remote get-url origin 2>/dev/null | sed -E 's#(\.git)?$##; s#.*github\.com[:/]##') || true
+  [[ -n "$repo" ]] || return 0
+  running=$(gh run list --repo "$repo" --workflow ci-cd.yml --json status,databaseId \
+    --jq '[.[] | select(.status == "in_progress" or .status == "queued" or .status == "waiting")] | length' 2>/dev/null || echo 0)
+  if [[ "$running" != 0 ]]; then
+    die "Há $running execução(ões) do CI/CD em andamento em $repo. Aguarde terminar (gh run list) e rode de novo."
+  fi
+}
+check_running_pipeline
+
 FAILURES=()
 try() { # descrição comando... (registra falha sem abortar a limpeza)
   local desc="$1" rc
@@ -137,6 +154,13 @@ destroy_rds() {
   local status snaps s
   status=$(aws_r rds describe-db-instances --db-instance-identifier "$DB_ID" \
     --query 'DBInstances[0].DBInstanceStatus' --output text)
+  case "$status" in
+    creating | modifying | backing-up | configuring-* | upgrading | rebooting | starting | stopping | renaming)
+      # A AWS recusa excluir nesses estados: espera estabilizar.
+      log "Banco em '$status'; aguardando ficar disponível para excluir"
+      aws_wait rds wait db-instance-available --db-instance-identifier "$DB_ID"
+      ;;
+  esac
   if [[ -n "$status" && "$status" != deleting ]]; then
     log "Removendo banco $DB_ID sem snapshot final e sem backups retidos"
     aws_w rds delete-db-instance --db-instance-identifier "$DB_ID" \

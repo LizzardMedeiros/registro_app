@@ -94,8 +94,11 @@ assert_fails_with "destroy: região inválida" 1 scripts/destroy.sh --env lab-x 
 assert_fails_with "bootstrap: repositório inválido" 1 scripts/bootstrap-github-oidc.sh --repo invalido --env lab-x --region us-east-1 --account 123456789012
 
 # --- Garantias estruturais -------------------------------------------------------
-assert "deploy.sh nunca chama destruição" bash -c "! grep -vE '^\s*#' scripts/deploy.sh | grep -nE 'destroy\.sh|delete-db-instance|delete-vpc|delete-bucket|delete-repository'"
+assert "deploy.sh nunca chama destruição" bash -c "! grep -vE '^\s*#|\b(die|log|warn)\b|msg=' scripts/deploy.sh | grep -nE 'destroy\.sh|delete-db-instance|delete-vpc|delete-bucket|delete-repository'"
 assert "destroy.sh preserva o provedor OIDC e a role do GitHub" bash -c "! grep -nE 'delete-open-id-connect-provider|github-actions' scripts/destroy.sh"
+assert "deploy.sh recusa publicar durante destruição" grep -q 'em destruição (ou destruição incompleta)' scripts/deploy.sh
+assert "deploy.sh não reativa ambiente em destruição" grep -q 'Destruição iniciada durante o deploy' scripts/deploy.sh
+assert "destroy.sh verifica pipeline em andamento" grep -q '^check_running_pipeline$' scripts/destroy.sh
 assert "destroy.sh exige confirmação sem --yes" grep -q 'Digite o nome do ambiente para confirmar' scripts/destroy.sh
 assert "destroy.sh remove o RDS sem snapshot e sem backups" grep -q -- '--skip-final-snapshot --delete-automated-backups' scripts/destroy.sh
 assert "deploy.sh cria RDS privado e sem backups" bash -c "grep -q -- '--no-publicly-accessible' scripts/deploy.sh && grep -q -- '--backup-retention-period 0' scripts/deploy.sh"
