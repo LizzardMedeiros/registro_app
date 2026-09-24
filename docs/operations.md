@@ -84,3 +84,14 @@ aws iam delete-open-id-connect-provider --open-id-connect-provider-arn \
 ```
 
 Cobranças podem aparecer na fatura até 24 h depois; confira em **Billing → Bills**.
+
+## Alerta de custo
+
+O budget `workshop-limite-2usd` avisa o responsável por e-mail se o custo do
+mês (real ou previsto) passar de US$ 2, sem abater créditos (ADR 0012). Ele só
+avisa: se o e-mail chegar, rode o `destroy.sh`. Para remover o alerta depois do
+workshop:
+
+```bash
+aws budgets delete-budget --account-id $ACCOUNT --budget-name workshop-limite-2usd
+```

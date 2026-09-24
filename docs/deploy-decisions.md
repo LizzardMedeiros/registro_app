@@ -44,6 +44,7 @@ Retomada do trabalho sem repetir a entrevista. Decisões detalhadas em
 | Uploads, jobs, WebSockets | Não existem no código |
 | Orçamento e duração | Perguntou sobre free tier; meta de US$ 0,50 mantida (estimativa bem abaixo) |
 | Quem confirma o encerramento | O responsável, na conversa |
+| Proteção contra esquecimento | Alerta do AWS Budgets de US$ 2/mês por e-mail (ADR 0012) |
 
 ## Hipóteses pendentes
 
@@ -101,6 +102,7 @@ Estimativa para 2 h (consulta à AWS Pricing API em 2026-09-24)
 | ECS cluster, serviço, task definitions | `registro-lab-lizzard`, `-api` | deploy.sh |
 | IPv4 público da task | (efêmero) | ECS |
 | Provedor OIDC, role `github-actions-workshop` | compartilhados | bootstrap (preservados) |
+| Budget `workshop-limite-2usd` | conta | AWS CLI, uma vez (preservado) |
 
 ## Escopo autorizado
 

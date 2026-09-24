@@ -17,6 +17,7 @@ ideia: crie um novo que o substitua e marque o antigo como "Substituído por".
 | [0009](0009-pipeline-ci-cd.md) | Pipeline de CI/CD com gates e artefato único | Aceito |
 | [0010](0010-ciclo-de-vida-do-ambiente.md) | Ciclo de vida: provisionamento explícito e destruição confirmada | Aceito |
 | [0011](0011-ferramentas-de-qualidade.md) | Ferramentas de teste e qualidade | Aceito |
+| [0012](0012-alerta-de-orcamento.md) | Alerta de orçamento de US$ 2 por mês | Aceito |
 
 Contexto consolidado, respostas da entrevista e hipóteses pendentes:
 [`docs/deploy-decisions.md`](../deploy-decisions.md).
