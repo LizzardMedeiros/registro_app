@@ -47,15 +47,28 @@ Retomada do trabalho sem repetir a entrevista. Decisões detalhadas em
 | Quem confirma o encerramento | O responsável, na conversa |
 | Proteção contra esquecimento | Alerta do AWS Budgets de US$ 2/mês por e-mail (ADR 0012) |
 
+## Ensaio de 2026-09-24
+
+Executado localmente com `deploy.sh --provision` e `destroy.sh --yes`, com a mesma
+lógica do pipeline. O caminho OIDC do GitHub ainda não foi exercitado, porque
+depende do merge na `main`.
+
+| Etapa | Resultado |
+|---|---|
+| Provisionamento completo | ~12 min (RDS ~6 min), exit 0 |
+| Verificação funcional do script | health, site, CORS, cadastro e consulta OK |
+| Conferência manual | site 200 com `Cache-Control: no-cache`; `config.js` com IP e versão; login e `/me` persistidos; RDS `PubliclyAccessible=False`, backup 0, porta 5432 inacessível de fora |
+| Destruição | exit 0, "nenhum remanescente" |
+| Conferência independente | 0 ENIs, 0 IPs, 0 RDS/snapshots/backups, 0 clusters, 0 ECR, 0 S3, 0 logs, 0 SSM, 0 roles `registro-*`; só a VPC padrão da conta |
+| Índice de tags | ainda lista tasks `STOPPED`, cluster `INACTIVE` e task definition `DELETE_IN_PROGRESS` do ECS: registros históricos, sem custo |
+
 ## Hipóteses pendentes
 
-- **Plano da conta (Free ou Paid):** não verificável antes da ativação. No plano
-  Free, alguns serviços podem ser restritos; se Fargate ou RDS forem bloqueados,
-  migrar para Paid (os créditos continuam valendo).
-- **Créditos:** contas novas recebem US$ 100 (mais até US$ 100 em tarefas). Não
-  presumidos no cálculo abaixo.
-- **Cotas de conta nova** (vCPU do Fargate, instâncias RDS): conferir no primeiro
-  provisionamento.
+- **Plano Free:** confirmado no ensaio que Fargate, RDS, S3, ECR, SSM e Logs são
+  permitidos.
+- **Cotas:** Fargate com 6 vCPU on-demand (o lab usa 0,25); PostgreSQL 16.15
+  disponível para `db.t4g.micro`.
+- **Créditos:** não abatidos no cálculo abaixo, nem no alerta de orçamento.
 
 ## Custo estimado
 
