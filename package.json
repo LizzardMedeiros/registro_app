@@ -1,0 +1,24 @@
+{
+  "name": "registro-app-tooling",
+  "private": true,
+  "description": "Ferramentas de qualidade do repositório (lint, formatação, testes do frontend). A API tem seu próprio package.json.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "test:frontend": "node --test \"frontend/test/*.test.js\"",
+    "test:api": "npm --prefix api test",
+    "test:shell": "bash scripts/test/run.sh",
+    "build:frontend": "bash scripts/build-frontend.sh dist/frontend '' dev"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0",
+    "jsdom": "^30.1.1",
+    "prettier": "^3.9.9"
+  }
+}
