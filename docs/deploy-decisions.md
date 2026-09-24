@@ -7,12 +7,13 @@ Retomada do trabalho sem repetir a entrevista. Decisões detalhadas em
 
 | Item | Situação |
 |---|---|
-| Conta AWS 270244457878 | **Em ativação** (`OptInRequired`/`NotSignedUp` em EC2, S3, RDS, ECS, SSM) |
+| Conta AWS 270244457878 | Ativa (plano Free, US$ 100 de crédito até 2027-03-24). Bloqueio inicial: cartão vencido |
 | Provedor OIDC + role `github-actions-workshop` | Criados e restritos ao environment `lab` |
 | Environment `lab` no GitHub | Criado (somente `main`), variáveis configuradas |
 | Implementação (API, testes, scripts, workflow) | Concluída na branch `feat/deploy-pipeline` |
 | `deploy.sh --dry-run` / `destroy.sh --dry-run` | Executados com sucesso contra a conta |
-| Provisionamento real | Aguardando ativação da conta |
+| Ensaio real (provisionar → verificar → destruir) | Concluído em 2026-09-24, sem remanescentes |
+| Ambiente `lab-lizzard` | **Destruído** após o ensaio; aguardando provisionamento para o workshop |
 
 ## Fatos encontrados no código
 
