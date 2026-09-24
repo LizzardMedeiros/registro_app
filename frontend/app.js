@@ -1,4 +1,7 @@
 const TOKEN_KEY = 'token';
+const CONFIG = window.APP_CONFIG || {};
+// Vazio = mesma origem (proxy do nginx local). No S3, a URL pública da API.
+const API_BASE = (CONFIG.apiBaseUrl || '').replace(/\/$/, '');
 
 const $ = (sel) => document.querySelector(sel);
 const loginForm = $('#login-form');
@@ -12,7 +15,7 @@ function showMessage(text, type = 'error') {
 
 async function api(path, options = {}) {
   const token = localStorage.getItem(TOKEN_KEY);
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`${API_BASE}/api${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -79,6 +82,8 @@ $('#logout').addEventListener('click', () => {
   switchTab('login');
   showAuth();
 });
+
+$('#version').textContent = CONFIG.version || 'dev';
 
 // Restaura a sessão se já houver um token válido
 (async () => {
